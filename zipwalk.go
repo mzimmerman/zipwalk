@@ -104,11 +104,13 @@ func Open(path string) (*Reader, error) {
 	if firstZipLoc == -1 {
 		f, err := os.Open(path)
 		rdr.file = f
+		log.Printf("Not an embedded zip file - %s", path)
 		return rdr, err
 	}
 	curLoc := firstZipLoc + 4
 	firstZip, err := zip.OpenReader(path[:curLoc])
 	if err != nil {
+		log.Printf("error opening zip file - %s", path)
 		return rdr, nil
 	}
 	currentZip := &firstZip.Reader
@@ -117,19 +119,23 @@ NextZipInPath:
 	for {
 		nextZipLoc := strings.Index(strings.ToLower(filepath.ToSlash(path[curLoc:])), ".zip/")
 		if nextZipLoc == -1 {
+			log.Printf("couldnotfindnext embedded zip - %s - loc=%d - in %s", path, curLoc, strings.ToLower(filepath.ToSlash(path[curLoc:])))
 			fileToFind := path[curLoc+1:]
 			for _, f := range currentZip.File {
 				if f.Name == fileToFind {
 					fopen, err := f.Open()
 					if err != nil {
+						log.Printf("Error opening the file we wanted to find - %s - %v", path, err)
 						rdr.Close()
 						return rdr, err
 					}
 					rdr.file = fopen
+					log.Printf("Success opening the file we wanted to find - %s", path)
 					return rdr, nil
 				}
 			}
 			rdr.Close()
+			log.Printf("No file exists - %s", path)
 			return nil, os.ErrNotExist
 		}
 		fileToFind := path[curLoc+1 : curLoc+1+nextZipLoc]
@@ -138,17 +144,20 @@ NextZipInPath:
 				fopen, err := f.Open()
 				if err != nil {
 					rdr.Close()
+					log.Printf("error opening file that is a zip - %s - %v", path, err)
 					return nil, err
 				}
 				zipContents, err := ioutil.ReadAll(fopen)
 				if err != nil {
 					rdr.Close()
+					log.Printf("error reading file that is a zip - %s - %v", path, err)
 					return nil, err
 				}
 				fopen.Close()
 				nextZip, err := zip.NewReader(bytes.NewReader(zipContents), f.FileInfo().Size())
 				if err != nil {
 					rdr.Close()
+					log.Printf("error opening embedded zip file - %s - %v", path, err)
 					return nil, err
 				}
 				curLoc = curLoc + 1 + nextZipLoc + 1

@@ -16,14 +16,28 @@ func TestOpen(t *testing.T) {
 	}{
 		{"testdata/a.txt", false},
 		{"testdata/a.zip", false},
-		{"testdata/nf.txt", true},
 		{"testdata/a.zip/a.txt", false},
-		{"testdata/a.zip/nf.txt", true},
-		{"testdata/nf.zip/nf.txt", true},
 		{"testdata/a.zip/dir1.zip", false},
 		{"testdata/a.zip/dir1.zip/dir1/dir1.txt", false},
-		{"testdata/a.zip/dir1.zip/dir1/nf.txt", true},
-		{"testdata/a.zip/dir1.zip/dir2/nf.txt", true},
+		{"testdata/a.zip/b.zip", false},
+		{"testdata/a.zip/b.zip/a.txt", false},
+		{"testdata/a.zip/b.zip/dir1.zip", false},
+		{"testdata/a.zip/b.zip/dir1.zip/dir1/dir1.txt", false},
+		{"testdata/dir2.zip", false},
+		{"testdata/dir2.zip/dir1/dir1.txt", false},
+		{"test/a.txt", true},
+		{"testdata/b.zip", true},
+		{"testdata/a.zip/b.txt", true},
+		{"testdata/a.zip/dir2.zip", true},
+		{"testdata/a.zip/dir1.zip/dir1/dir2.txt", true},
+		{"testdata/b.zip/b.zip", true},
+		{"testdata/a.zip/c.zip/a.txt", true},
+		{"testdata/a.zip/b.zip/dir3.zip", true},
+		{"testdata/a.zip/b.zip/dir3.zip/dir1", true},
+		{"testdata/a.zip/b.zip/dir1.zip/dir1/dir3.txt", true},
+		{"testdata/dir3.zip", true},
+		{"testdata/dir4.zip/dir1", true},
+		{"testdata/dir2.zip/dir1/dir3.txt", true},
 	}
 	for _, val := range tests {
 		f, err := zipwalk.Open(val.Name)
@@ -34,7 +48,7 @@ func TestOpen(t *testing.T) {
 			}
 		}
 		if err != nil && !val.ExpectError {
-			t.Errorf("Error unexpected opening %s", val.Name)
+			t.Errorf("Error unexpected opening %s - %v", val.Name, err)
 		}
 		if err == nil && val.ExpectError {
 			t.Errorf("Expected error but didn't get one - %s", val.Name)
