@@ -3,9 +3,9 @@ package zipwalk
 import (
 	"archive/zip"
 	"bytes"
+	"fmt"
 	"io"
 	"io/ioutil"
-	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -41,17 +41,13 @@ type WalkFunc func(path string, info os.FileInfo, reader io.Reader, err error) e
 func Walk(root string, walkFn WalkFunc) error {
 	return filepath.Walk(root, func(filePath string, info os.FileInfo, err error) error {
 		if err != nil || info.IsDir() {
-			log.Printf("isdir - %s", filePath)
 			return walkFn(filePath, info, nil, err)
 		}
 		f, err := os.Open(filePath)
 		if err != nil {
-			log.Printf("osopenerror - %s", filePath)
 			return walkFn(filePath, info, nil, err)
 		}
 		defer f.Close()
-		ext := strings.ToLower(filepath.Ext(filePath))
-		log.Printf("ext for %s =  %s", filePath, ext)
 		if strings.ToLower(filepath.Ext(filePath)) == ".zip" {
 			content, err := ioutil.ReadAll(f)
 			return walkFuncRecursive(filePath, info, content, walkFn, err)
@@ -71,13 +67,11 @@ func walkFuncRecursive(filePath string, info os.FileInfo, content []byte, walkFn
 	// is a zip file
 	zr, err := zip.NewReader(bytes.NewReader(content), int64(len(content)))
 	if err != nil {
-		log.Printf("zipnewreadererror - %s", filePath)
 		return walkFn(filePath, info, nil, err)
 	}
 	for _, f := range zr.File {
 		rdr, err := f.Open()
 		closeIt := err == nil
-		log.Printf("Looking through %s for %s", filePath, f.Name)
 		if strings.ToLower(filepath.Ext(f.Name)) == ".zip" {
 			content, err := ioutil.ReadAll(rdr)
 			err = walkFuncRecursive(filepath.Join(filePath, f.Name), f.FileInfo(), content, walkFn, err)
@@ -88,92 +82,55 @@ func walkFuncRecursive(filePath string, info os.FileInfo, content []byte, walkFn
 			rdr.Close()
 		}
 		if err != nil {
-			log.Printf("errorafterwalk - %s", filePath)
 			return err
 		}
 	}
 	return nil
 }
 
-// Open will open files inside zip files given a full path
+// Stat will get the status of files embedded in a zip path
 // e.g., file1.zip/file2.zip/a.txt
-func Open(path string) (*Reader, error) {
+func Stat(path string) (os.FileInfo, error) {
 	path = filepath.ToSlash(filepath.Clean(path))
-	rdr := &Reader{}
 	firstZipLoc := strings.Index(strings.ToLower(filepath.ToSlash(path)), ".zip/")
 	if firstZipLoc == -1 {
-		f, err := os.Open(path)
-		rdr.file = f
-		log.Printf("Not an embedded zip file - %s", path)
-		return rdr, err
+		return os.Stat(path)
 	}
 	curLoc := firstZipLoc + 4
 	firstZip, err := zip.OpenReader(path[:curLoc])
 	if err != nil {
-		log.Printf("error opening zip file - %s", path)
-		return rdr, err
+		return nil, fmt.Errorf("error opening zip file - %s", path)
 	}
-	rdr.parent = firstZip
-	log.Printf("Entering recurisve for path %s with %s", path, path[curLoc+1:])
-	return rdr, openRecursive(&firstZip.Reader, path[curLoc+1:], rdr)
+	defer firstZip.Close()
+	return statRecursive(&firstZip.Reader, path[curLoc+1:])
 }
 
-func openRecursive(zf *zip.Reader, path string, rdr *Reader) error {
+func statRecursive(zf *zip.Reader, path string) (os.FileInfo, error) {
 	fileToFind := path
 	nextZipLoc := strings.Index(strings.ToLower(filepath.ToSlash(path)), ".zip/")
 	if nextZipLoc != -1 {
 		fileToFind = path[:nextZipLoc+4]
 	}
 	for _, f := range zf.File {
-		log.Printf("filetofind = %s of %s on %s", fileToFind, path, f.Name)
 		if f.Name == fileToFind {
+			if nextZipLoc == -1 {
+				return f.FileInfo(), nil
+			}
 			fopen, err := f.Open()
 			if err != nil {
-				log.Printf("Error opening the file we wanted to find - %s - %v", path, err)
-				rdr.Close()
-				return err
-			}
-			if nextZipLoc == -1 {
-				rdr.file = fopen
-				log.Printf("Success opening the file we wanted to find - %s", path)
-				return nil
+				return nil, fmt.Errorf("Error opening the file we wanted to find - %s - %v", path, err)
 			}
 			buf, err := ioutil.ReadAll(fopen)
+			fopen.Close()
 			if err != nil {
-				rdr.Close()
-				log.Printf("Error reading zip file - %s - %v", path, err)
-				return err
+				return nil, fmt.Errorf("Error reading zip file - %s - %v", path, err)
 			}
 			zr, err := zip.NewReader(bytes.NewReader(buf), int64(len(buf)))
 			if err != nil {
-				rdr.Close()
-				log.Printf("Error opening zip file - %s - %v", path, err)
-				return err
+				return nil, fmt.Errorf("Error opening zip file - %s - %v", path, err)
 			}
-			return openRecursive(zr, path[len(fileToFind)+1:], rdr)
+			return statRecursive(zr, path[len(fileToFind)+1:])
 		}
 	}
-	rdr.Close()
-	log.Printf("No file exists - %s", path)
-	return os.ErrNotExist
-}
-
-type Reader struct {
-	file   io.ReadCloser
-	parent *zip.ReadCloser
-}
-
-// Close the reader and any underlyzing zip file
-func (r *Reader) Close() error {
-	var firstError error
-	if r.file != nil {
-		firstError = r.file.Close()
-	}
-	if r.parent != nil {
-		err := r.parent.Close()
-		if err != nil && firstError == nil {
-			firstError = err
-		}
-	}
-	return firstError
+	return nil, os.ErrNotExist
 }

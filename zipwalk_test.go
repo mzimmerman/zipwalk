@@ -40,13 +40,7 @@ func TestOpen(t *testing.T) {
 		{"testdata/dir2.zip/dir1/dir3.txt", true},
 	}
 	for _, val := range tests {
-		f, err := zipwalk.Open(val.Name)
-		if err == nil {
-			err = f.Close()
-			if err != nil {
-				t.Errorf("Error closing zip file - %s", err)
-			}
-		}
+		_, err := zipwalk.Stat(val.Name)
 		if err != nil && !val.ExpectError {
 			t.Errorf("Error unexpected opening %s - %v", val.Name, err)
 		}
