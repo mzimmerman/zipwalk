@@ -1,7 +1,9 @@
 package zipwalk_test
 
 import (
+	"bytes"
 	"io"
+	"io/ioutil"
 	"os"
 	"path/filepath"
 	"testing"
@@ -51,30 +53,40 @@ func TestOpen(t *testing.T) {
 }
 
 func TestWalk(t *testing.T) {
-	expectedPaths := map[string]struct{}{
-		"testdata":                                    struct{}{},
-		"testdata/a.txt":                              struct{}{},
-		"testdata/a.zip/a.txt":                        struct{}{},
-		"testdata/a.zip/dir1.zip":                     struct{}{},
-		"testdata/a.zip/dir1.zip/dir1":                struct{}{},
-		"testdata/a.zip/dir1.zip/dir1/dir1.txt":       struct{}{},
-		"testdata/a.zip/b.zip":                        struct{}{},
-		"testdata/a.zip/b.zip/a.txt":                  struct{}{},
-		"testdata/a.zip/b.zip/dir1.zip":               struct{}{},
-		"testdata/a.zip/b.zip/dir1.zip/dir1":          struct{}{},
-		"testdata/a.zip/b.zip/dir1.zip/dir1/dir1.txt": struct{}{},
-		"testdata/a.zip":                              struct{}{},
-		"testdata/dir2.zip/dir1":                      struct{}{},
-		"testdata/dir2.zip/dir1/dir1.txt":             struct{}{},
-		"testdata/dir2.zip":                           struct{}{},
+	expectedPaths := map[string][]byte{
+		"testdata":                                    nil,
+		"testdata/a.txt":                              []byte("hi there"),
+		"testdata/a.zip/a.txt":                        []byte("hi there"),
+		"testdata/a.zip/dir1.zip":                     nil,
+		"testdata/a.zip/dir1.zip/dir1":                nil,
+		"testdata/a.zip/dir1.zip/dir1/dir1.txt":       nil,
+		"testdata/a.zip/b.zip":                        nil,
+		"testdata/a.zip/b.zip/a.txt":                  []byte("hi there"),
+		"testdata/a.zip/b.zip/dir1.zip":               nil,
+		"testdata/a.zip/b.zip/dir1.zip/dir1":          nil,
+		"testdata/a.zip/b.zip/dir1.zip/dir1/dir1.txt": []byte("hi there"),
+		"testdata/a.zip":                              nil,
+		"testdata/dir2.zip/dir1":                      nil,
+		"testdata/dir2.zip/dir1/dir1.txt":             []byte("hi there"),
+		"testdata/dir2.zip":                           nil,
 	}
 	err := zipwalk.Walk("testdata", func(path string, info os.FileInfo, reader io.Reader, err error) error {
 		if err != nil {
 			t.Errorf("Error walking testdata - %v", err)
+			return err
 		}
 		path = filepath.ToSlash(path)
-		if _, ok := expectedPaths[path]; ok {
+		if expectedContent, ok := expectedPaths[path]; ok {
 			t.Logf("Walked path %s", path)
+			if !info.IsDir() {
+				gotContents, err := ioutil.ReadAll(reader)
+				if err != nil {
+					t.Errorf("Error reading file %s - %v", path, err)
+				}
+				if len(expectedContent) > 0 && !bytes.Equal(expectedContent, gotContents) {
+					t.Errorf("Expected contents for %s of:\n%q\nvs\n%q", path, expectedContent, gotContents)
+				}
+			}
 			delete(expectedPaths, path)
 		} else {
 			t.Errorf("Got unexpected path - %s", path)

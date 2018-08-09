@@ -36,7 +36,7 @@ type WalkFunc func(path string, info os.FileInfo, reader io.Reader, err error) e
 // directory in the tree, including root. All errors that arise visiting files
 // and directories are filtered by walkFn. The real files are walked in lexical
 // order, which makes the output deterministic but means that for very
-// large directories Walk can be inefficient.  Zip files are walked in the order they appear zipped.
+// large directories Walk can be inefficient.  Files insize zip files are walked in the order they appear in the zip file.
 // Walk does not follow symbolic links.
 func Walk(root string, walkFn WalkFunc) error {
 	return filepath.Walk(root, func(filePath string, info os.FileInfo, err error) error {
@@ -72,11 +72,11 @@ func walkFuncRecursive(filePath string, info os.FileInfo, content []byte, walkFn
 	for _, f := range zr.File {
 		rdr, err := f.Open()
 		closeIt := err == nil
+		insideContent, err := ioutil.ReadAll(rdr)
 		if strings.ToLower(filepath.Ext(f.Name)) == ".zip" {
-			content, err := ioutil.ReadAll(rdr)
-			err = walkFuncRecursive(filepath.Join(filePath, f.Name), f.FileInfo(), content, walkFn, err)
+			err = walkFuncRecursive(filepath.Join(filePath, f.Name), f.FileInfo(), insideContent, walkFn, err)
 		} else {
-			err = walkFn(filepath.Join(filePath, f.Name), f.FileInfo(), bytes.NewReader(content), err)
+			err = walkFn(filepath.Join(filePath, f.Name), f.FileInfo(), bytes.NewReader(insideContent), err)
 		}
 		if closeIt {
 			rdr.Close()
