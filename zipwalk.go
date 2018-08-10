@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 // SkipDir is used as a return value from WalkFuncs to indicate that
@@ -59,6 +60,25 @@ func Walk(root string, walkFn WalkFunc) error {
 	})
 }
 
+// ZipFileInfo is used to "mask" the modified time of the files extracted from the zip
+type ZipFileInfo struct {
+	os.FileInfo
+	LastModified time.Time
+}
+
+// ModTime returns the date of the full parent zip file's modification time
+func (zfi ZipFileInfo) ModTime() time.Time {
+	return zfi.LastModified
+}
+
+// NewZipFileInfo creates an os.FileInfo from given last modified time and "parent" FileInfo
+func NewZipFileInfo(lm time.Time, info os.FileInfo) ZipFileInfo {
+	return ZipFileInfo{
+		LastModified: lm,
+		FileInfo:     info,
+	}
+}
+
 func walkFuncRecursive(filePath string, info os.FileInfo, content []byte, walkFn WalkFunc, err error) error {
 	if err != nil {
 		return err
@@ -80,9 +100,9 @@ func walkFuncRecursive(filePath string, info os.FileInfo, content []byte, walkFn
 		closeIt := err == nil
 		insideContent, err := ioutil.ReadAll(rdr)
 		if strings.ToLower(filepath.Ext(f.Name)) == ".zip" {
-			err = walkFuncRecursive(filepath.Join(filePath, f.Name), f.FileInfo(), insideContent, walkFn, err)
+			err = walkFuncRecursive(filepath.Join(filePath, f.Name), NewZipFileInfo(info.ModTime(), f.FileInfo()), insideContent, walkFn, err)
 		} else {
-			err = walkFn(filepath.Join(filePath, f.Name), f.FileInfo(), bytes.NewReader(insideContent), err)
+			err = walkFn(filepath.Join(filePath, f.Name), NewZipFileInfo(info.ModTime(), f.FileInfo()), bytes.NewReader(insideContent), err)
 		}
 		if closeIt {
 			rdr.Close()
