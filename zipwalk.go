@@ -16,6 +16,9 @@ import (
 // as an error by any function.
 var SkipDir = filepath.SkipDir
 
+// SkipZip allows you to skip going into the zip file
+var SkipZip = fmt.Errorf("SkipZip")
+
 // WalkFunc is the type of the function called for each file or directory
 // visited by Walk. The path argument contains the argument to Walk as a
 // prefix; that is, if Walk is called with "dir", which is a directory
@@ -61,6 +64,9 @@ func walkFuncRecursive(filePath string, info os.FileInfo, content []byte, walkFn
 		return err
 	}
 	err = walkFn(filePath, info, bytes.NewReader(content), nil)
+	if err == SkipZip {
+		return nil
+	}
 	if err != nil {
 		return err
 	}
