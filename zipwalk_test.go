@@ -58,8 +58,6 @@ func TestWalk(t *testing.T) {
 		"testdata/a.txt":                              []byte("hi there"),
 		"testdata/a.zip/a.txt":                        []byte("hi there"),
 		"testdata/a.zip/dir1.zip":                     nil,
-		"testdata/a.zip/dir1.zip/dir1":                nil,
-		"testdata/a.zip/dir1.zip/dir1/dir1.txt":       nil,
 		"testdata/a.zip/b.zip":                        nil,
 		"testdata/a.zip/b.zip/a.txt":                  []byte("hi there"),
 		"testdata/a.zip/b.zip/dir1.zip":               nil,
@@ -72,7 +70,7 @@ func TestWalk(t *testing.T) {
 	}
 	err := zipwalk.Walk("testdata", func(path string, info os.FileInfo, reader io.Reader, err error) error {
 		if err != nil {
-			t.Errorf("Error walking testdata - %v", err)
+			t.Errorf("Error walking testdata - %s - %v", path, err)
 			return err
 		}
 		path = filepath.ToSlash(path)
@@ -90,6 +88,9 @@ func TestWalk(t *testing.T) {
 			delete(expectedPaths, path)
 		} else {
 			t.Errorf("Got unexpected path - %s", path)
+		}
+		if path == "testdata/a.zip/dir1.zip" {
+			return zipwalk.SkipZip
 		}
 		return nil
 	})
