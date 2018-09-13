@@ -16,9 +16,6 @@ import (
 // as an error by any function.
 var SkipDir = filepath.SkipDir
 
-// SkipZip allows you to skip going into the zip file
-var SkipZip = fmt.Errorf("SkipZip")
-
 // WalkFunc is the type of the function called for each file or directory
 // visited by Walk. The path argument contains the argument to Walk as a
 // prefix; that is, if Walk is called with "dir", which is a directory
@@ -52,38 +49,34 @@ func Walk(root string, walkFn WalkFunc) error {
 		}
 		defer f.Close()
 		if strings.ToLower(filepath.Ext(filePath)) == ".zip" {
-			return walkFuncRecursive(filePath, info, f, walkFn, err)
+			content, err := ioutil.ReadAll(f)
+			return walkFuncRecursive(filePath, info, content, walkFn, err)
 		}
 		return walkFn(filePath, info, f, nil)
 	})
 }
 
-func walkFuncRecursive(filePath string, info os.FileInfo, content io.ReaderAt, walkFn WalkFunc, err error) error {
+func walkFuncRecursive(filePath string, info os.FileInfo, content []byte, walkFn WalkFunc, err error) error {
 	if err != nil {
 		return err
 	}
-	err = walkFn(filePath, info, io.NewSectionReader(content, 0, info.Size()), nil)
-	if err == SkipZip {
-		return nil
-	}
+	err = walkFn(filePath, info, bytes.NewReader(content), nil)
 	if err != nil {
 		return err
 	}
 	// is a zip file
-	zr, err := zip.NewReader(content, info.Size())
+	zr, err := zip.NewReader(bytes.NewReader(content), int64(len(content)))
 	if err != nil {
 		return walkFn(filePath, info, nil, err)
 	}
 	for _, f := range zr.File {
 		rdr, err := f.Open()
 		closeIt := err == nil
+		insideContent, err := ioutil.ReadAll(rdr)
 		if strings.ToLower(filepath.Ext(f.Name)) == ".zip" {
-			all, err := ioutil.ReadAll(rdr)
-			if err == nil {
-				err = walkFuncRecursive(filepath.Join(filePath, f.Name), f.FileInfo(), bytes.NewReader(all), walkFn, err)
-			}
+			err = walkFuncRecursive(filepath.Join(filePath, f.Name), f.FileInfo(), insideContent, walkFn, err)
 		} else {
-			err = walkFn(filepath.Join(filePath, f.Name), f.FileInfo(), rdr, err)
+			err = walkFn(filepath.Join(filePath, f.Name), f.FileInfo(), bytes.NewReader(insideContent), err)
 		}
 		if closeIt {
 			rdr.Close()
@@ -127,9 +120,12 @@ func statRecursive(zf *zip.Reader, path string) (os.FileInfo, error) {
 			if err != nil {
 				return nil, fmt.Errorf("Error opening the file we wanted to find - %s - %v", path, err)
 			}
-			all, err := ioutil.ReadAll(fopen)
+			buf, err := ioutil.ReadAll(fopen)
 			fopen.Close()
-			zr, err := zip.NewReader(bytes.NewReader(all), f.FileInfo().Size())
+			if err != nil {
+				return nil, fmt.Errorf("Error reading zip file - %s - %v", path, err)
+			}
+			zr, err := zip.NewReader(bytes.NewReader(buf), int64(len(buf)))
 			if err != nil {
 				return nil, fmt.Errorf("Error opening zip file - %s - %v", path, err)
 			}
