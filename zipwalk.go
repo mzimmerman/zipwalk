@@ -100,15 +100,13 @@ func walkFuncRecursive(filePath string, info os.FileInfo, content []byte, walkFn
 	for _, f := range zr.File {
 		if !f.FileHeader.IsEncrypted() {
 			rdr, err := f.Open()
-			closeIt := err == nil
-			insideContent, err := ioutil.ReadAll(rdr)
-			if strings.ToLower(filepath.Ext(f.Name)) == ".zip" {
-				err = walkFuncRecursive(filepath.Join(filePath, f.Name), NewZipFileInfo(info.ModTime(), f.FileInfo()), insideContent, walkFn, err)
-			} else {
-				err = walkFn(filepath.Join(filePath, f.Name), NewZipFileInfo(info.ModTime(), f.FileInfo()), bytes.NewReader(insideContent), err)
-			}
-			if closeIt {
-				rdr.Close()
+			if err == nil {
+				insideContent, err := ioutil.ReadAll(rdr)
+				if strings.ToLower(filepath.Ext(f.Name)) == ".zip" {
+					err = walkFuncRecursive(filepath.Join(filePath, f.Name), NewZipFileInfo(info.ModTime(), f.FileInfo()), insideContent, walkFn, err)
+				} else {
+					err = walkFn(filepath.Join(filePath, f.Name), NewZipFileInfo(info.ModTime(), f.FileInfo()), bytes.NewReader(insideContent), err)
+				}
 			}
 			if err != nil {
 				return err
