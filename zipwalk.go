@@ -109,7 +109,7 @@ func walkFuncRecursive(filePath string, info os.FileInfo, content []byte, walkFn
 				}
 			}
 			if err != nil {
-				return err
+				return fmt.Errorf("Error opening file %s/%s - %v", filePath, f.Name, err)
 			}
 		}
 	}
