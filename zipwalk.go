@@ -1,7 +1,6 @@
 package zipwalk
 
 import (
-	"archive/zip"
 	"bytes"
 	"fmt"
 	"io"
@@ -10,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/alexmullins/zip"
 )
 
 // SkipDir is used as a return value from WalkFuncs to indicate that
@@ -95,20 +96,23 @@ func walkFuncRecursive(filePath string, info os.FileInfo, content []byte, walkFn
 	if err != nil {
 		return walkFn(filePath, info, nil, err)
 	}
+
 	for _, f := range zr.File {
-		rdr, err := f.Open()
-		closeIt := err == nil
-		insideContent, err := ioutil.ReadAll(rdr)
-		if strings.ToLower(filepath.Ext(f.Name)) == ".zip" {
-			err = walkFuncRecursive(filepath.Join(filePath, f.Name), NewZipFileInfo(info.ModTime(), f.FileInfo()), insideContent, walkFn, err)
-		} else {
-			err = walkFn(filepath.Join(filePath, f.Name), NewZipFileInfo(info.ModTime(), f.FileInfo()), bytes.NewReader(insideContent), err)
-		}
-		if closeIt {
-			rdr.Close()
-		}
-		if err != nil {
-			return err
+		if !f.FileHeader.IsEncrypted() {
+			rdr, err := f.Open()
+			closeIt := err == nil
+			insideContent, err := ioutil.ReadAll(rdr)
+			if strings.ToLower(filepath.Ext(f.Name)) == ".zip" {
+				err = walkFuncRecursive(filepath.Join(filePath, f.Name), NewZipFileInfo(info.ModTime(), f.FileInfo()), insideContent, walkFn, err)
+			} else {
+				err = walkFn(filepath.Join(filePath, f.Name), NewZipFileInfo(info.ModTime(), f.FileInfo()), bytes.NewReader(insideContent), err)
+			}
+			if closeIt {
+				rdr.Close()
+			}
+			if err != nil {
+				return err
+			}
 		}
 	}
 	return nil
