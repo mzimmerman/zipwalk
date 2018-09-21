@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -107,9 +108,9 @@ func walkFuncRecursive(filePath string, info os.FileInfo, content []byte, walkFn
 				} else {
 					err = walkFn(filepath.Join(filePath, f.Name), NewZipFileInfo(info.ModTime(), f.FileInfo()), bytes.NewReader(insideContent), err)
 				}
-			}
-			if err != nil {
-				return fmt.Errorf("Error opening file %s/%s - %v", filePath, f.Name, err)
+				rdr.Close()
+			} else { // err != nil
+				log.Printf("Error opening file %s/%s - %v", filePath, f.Name, err)
 			}
 		}
 	}
