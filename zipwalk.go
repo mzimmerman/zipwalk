@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -101,22 +102,32 @@ func walkFuncRecursive(filePath string, info os.FileInfo, content io.ReaderAt, w
 		// if !f.FileHeader.IsEncrypted() {
 		rdr, err := f.Open()
 		if err == nil {
-			insideContent, err := ioutil.ReadAll(rdr)
+			err = func() error {
+				defer rdr.Close()
+				insideContent, err := ioutil.ReadAll(rdr)
+				if err != nil && strings.Contains(err.Error(), "flate: corrupt input before offset") {
+					log.Printf("File %s is likely encrypted - %v", filepath.Join(filePath, f.Name), err)
+					return nil
+				}
+				if err != nil {
+					return fmt.Errorf("Error reading file - %s - %v", filepath.Join(filePath, f.Name), err)
+				}
+				if strings.ToLower(filepath.Ext(f.Name)) == ".zip" {
+					err = walkFuncRecursive(filepath.Join(filePath, f.Name), NewZipFileInfo(info.ModTime(), f.FileInfo()), bytes.NewReader(insideContent), walkFn, err)
+					if err != nil {
+						return fmt.Errorf("Received error from walkFuncRecursive - %s - %v", filepath.Join(filePath, f.Name), err)
+					}
+				} else {
+					err = walkFn(filepath.Join(filePath, f.Name), NewZipFileInfo(info.ModTime(), f.FileInfo()), bytes.NewReader(insideContent), err)
+					if err != nil {
+						return fmt.Errorf("Received error from walkFn - %s - %v", filepath.Join(filePath, f.Name), err)
+					}
+				}
+				return nil
+			}()
 			if err != nil {
-				return fmt.Errorf("Error reading file - %s - %v", filepath.Join(filePath, f.Name), err)
+				return err
 			}
-			if strings.ToLower(filepath.Ext(f.Name)) == ".zip" {
-				err = walkFuncRecursive(filepath.Join(filePath, f.Name), NewZipFileInfo(info.ModTime(), f.FileInfo()), bytes.NewReader(insideContent), walkFn, err)
-				if err != nil {
-					return fmt.Errorf("Received error from walkFuncRecursive - %s - %v", filepath.Join(filePath, f.Name), err)
-				}
-			} else {
-				err = walkFn(filepath.Join(filePath, f.Name), NewZipFileInfo(info.ModTime(), f.FileInfo()), bytes.NewReader(insideContent), err)
-				if err != nil {
-					return fmt.Errorf("Received error from walkFn - %s - %v", filepath.Join(filePath, f.Name), err)
-				}
-			}
-			rdr.Close()
 		} else { // err != nil
 			return fmt.Errorf("Error opening file %s - %v", filepath.Join(filePath, f.Name), err)
 		}
