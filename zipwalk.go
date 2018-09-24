@@ -94,6 +94,10 @@ func walkFuncRecursive(filePath string, info os.FileInfo, content io.ReaderAt, w
 	// is a zip file
 	zr, err := zip.NewReader(content, info.Size())
 	if err != nil {
+		if strings.Contains(err.Error(), "zip: not a valid zip file") {
+			log.Printf("File %s is not a valid zip file - %v", filepath.Join(filePath, info.Name()), err)
+			return nil
+		}
 		return fmt.Errorf("walkFuncRecursive error reading file %s - %v", filepath.Join(filePath, info.Name()), err)
 		// return walkFn(filePath, info, nil, err)
 	}
