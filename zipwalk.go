@@ -105,11 +105,15 @@ func walkFuncRecursive(filePath string, info os.FileInfo, content io.ReaderAt, w
 			err = func() error {
 				defer rdr.Close()
 				insideContent, err := ioutil.ReadAll(rdr)
-				if err != nil && strings.Contains(err.Error(), "flate: corrupt input before offset") {
-					log.Printf("File %s is likely encrypted - %v", filepath.Join(filePath, f.Name), err)
-					return nil
-				}
 				if err != nil {
+					if strings.Contains(err.Error(), "flate: corrupt input before offset") {
+						log.Printf("File %s is likely encrypted - %v", filepath.Join(filePath, f.Name), err)
+						return nil
+					}
+					if strings.Contains(err.Error(), "zip: unsupported compression algorithm") {
+						log.Printf("File %s is likely corrupted - %v", filepath.Join(filePath, f.Name), err)
+						return nil
+					}
 					return fmt.Errorf("Error reading file - %s - %v", filepath.Join(filePath, f.Name), err)
 				}
 				if strings.ToLower(filepath.Ext(f.Name)) == ".zip" {
