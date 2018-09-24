@@ -114,6 +114,10 @@ func walkFuncRecursive(filePath string, info os.FileInfo, content io.ReaderAt, w
 						log.Printf("File %s is likely encrypted - %v", filepath.Join(filePath, f.Name), err)
 						return nil
 					}
+					if strings.Contains(err.Error(), "EOF") {
+						log.Printf("File %s error reading file, got unexpected EOF - %v", filepath.Join(filePath, f.Name), err)
+						return nil
+					}
 					return fmt.Errorf("Error reading file - %s - %v", filepath.Join(filePath, f.Name), err)
 				}
 				if strings.ToLower(filepath.Ext(f.Name)) == ".zip" {
