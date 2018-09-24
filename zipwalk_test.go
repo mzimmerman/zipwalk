@@ -68,7 +68,7 @@ func TestWalk(t *testing.T) {
 		"testdata/dir2.zip/dir1/dir1.txt":             []byte("hi there"),
 		"testdata/dir2.zip":                           nil,
 	}
-	err := zipwalk.Walk("testdata", func(path string, info os.FileInfo, reader io.Reader, err error) error {
+	err := zipwalk.Walk("testdata", func(path string, info os.FileInfo, reader io.ReaderAt, err error) error {
 		if err != nil {
 			t.Errorf("Error walking testdata - %s - %v", path, err)
 			return err
@@ -77,7 +77,7 @@ func TestWalk(t *testing.T) {
 		if expectedContent, ok := expectedPaths[path]; ok {
 			t.Logf("Walked path %s", path)
 			if !info.IsDir() {
-				gotContents, err := ioutil.ReadAll(reader)
+				gotContents, err := ioutil.ReadAll(io.NewSectionReader(reader, 0, info.Size()))
 				if err != nil {
 					t.Errorf("Error reading file %s - %v", path, err)
 				}

@@ -1,17 +1,16 @@
 package zipwalk
 
 import (
+	"archive/zip"
 	"bytes"
 	"fmt"
 	"io"
 	"io/ioutil"
-	"log"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
-
-	"github.com/alexmullins/zip"
+	// "github.com/alexmullins/zip"
 )
 
 // SkipDir is used as a return value from WalkFuncs to indicate that
@@ -36,7 +35,7 @@ var SkipZip = fmt.Errorf("SkipZip")
 // on a directory, Walk skips the directory's contents entirely.
 // If the function returns SkipDir when invoked on a non-directory file,
 // Walk skips the remaining files in the containing directory.
-type WalkFunc func(path string, info os.FileInfo, reader io.Reader, err error) error
+type WalkFunc func(path string, info os.FileInfo, reader io.ReaderAt, err error) error
 
 // Walk walks the file tree rooted at root including through zip files, calling walkFn for each file or
 // directory in the tree, including root. All errors that arise visiting files
@@ -55,8 +54,7 @@ func Walk(root string, walkFn WalkFunc) error {
 		}
 		defer f.Close()
 		if strings.ToLower(filepath.Ext(filePath)) == ".zip" {
-			content, err := ioutil.ReadAll(f)
-			return walkFuncRecursive(filePath, info, content, walkFn, err)
+			return walkFuncRecursive(filePath, info, f, walkFn, err)
 		}
 		return walkFn(filePath, info, f, nil)
 	})
@@ -81,38 +79,50 @@ func NewZipFileInfo(lm time.Time, info os.FileInfo) ZipFileInfo {
 	}
 }
 
-func walkFuncRecursive(filePath string, info os.FileInfo, content []byte, walkFn WalkFunc, err error) error {
+func walkFuncRecursive(filePath string, info os.FileInfo, content io.ReaderAt, walkFn WalkFunc, err error) error {
 	if err != nil {
-		return err
+		return fmt.Errorf("walkFuncRecursive received error when called for file %s - %v", filepath.Join(filePath, info.Name()), err)
 	}
-	err = walkFn(filePath, info, bytes.NewReader(content), nil)
+	err = walkFn(filePath, info, content, nil)
 	if err == SkipZip {
 		return nil
 	}
 	if err != nil {
-		return err
+		return fmt.Errorf("walkFuncRecursive received error from walkFn for file %s - %v", filepath.Join(filePath, info.Name()), err)
 	}
 	// is a zip file
-	zr, err := zip.NewReader(bytes.NewReader(content), int64(len(content)))
+	zr, err := zip.NewReader(content, info.Size())
 	if err != nil {
-		return walkFn(filePath, info, nil, err)
+		return fmt.Errorf("walkFuncRecursive error reading file %s - %v", filepath.Join(filePath, info.Name()), err)
+		// return walkFn(filePath, info, nil, err)
 	}
 
 	for _, f := range zr.File {
-		if !f.FileHeader.IsEncrypted() {
-			rdr, err := f.Open()
-			if err == nil {
-				insideContent, err := ioutil.ReadAll(rdr)
-				if strings.ToLower(filepath.Ext(f.Name)) == ".zip" {
-					err = walkFuncRecursive(filepath.Join(filePath, f.Name), NewZipFileInfo(info.ModTime(), f.FileInfo()), insideContent, walkFn, err)
-				} else {
-					err = walkFn(filepath.Join(filePath, f.Name), NewZipFileInfo(info.ModTime(), f.FileInfo()), bytes.NewReader(insideContent), err)
-				}
-				rdr.Close()
-			} else { // err != nil
-				log.Printf("Error opening file %s/%s - %v", filePath, f.Name, err)
+		// if !f.FileHeader.IsEncrypted() {
+		rdr, err := f.Open()
+		if err == nil {
+			insideContent, err := ioutil.ReadAll(rdr)
+			if err != nil {
+				return fmt.Errorf("Error reading file - %s - %v", filepath.Join(filePath, f.Name), err)
 			}
+			if strings.ToLower(filepath.Ext(f.Name)) == ".zip" {
+				err = walkFuncRecursive(filepath.Join(filePath, f.Name), NewZipFileInfo(info.ModTime(), f.FileInfo()), bytes.NewReader(insideContent), walkFn, err)
+				if err != nil {
+					return fmt.Errorf("Received error from walkFuncRecursive - %s - %v", filepath.Join(filePath, f.Name), err)
+				}
+			} else {
+				err = walkFn(filepath.Join(filePath, f.Name), NewZipFileInfo(info.ModTime(), f.FileInfo()), bytes.NewReader(insideContent), err)
+				if err != nil {
+					return fmt.Errorf("Received error from walkFn - %s - %v", filepath.Join(filePath, f.Name), err)
+				}
+			}
+			rdr.Close()
+		} else { // err != nil
+			return fmt.Errorf("Error opening file %s - %v", filepath.Join(filePath, f.Name), err)
 		}
+		// } else {
+		// 	log.Printf("Ignoring encrypted file - %s", filepath.Join(filePath, f.Name))
+		// }
 	}
 	return nil
 }
