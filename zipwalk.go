@@ -36,7 +36,7 @@ var SkipZip = fmt.Errorf("SkipZip")
 // on a directory, Walk skips the directory's contents entirely.
 // If the function returns SkipDir when invoked on a non-directory file,
 // Walk skips the remaining files in the containing directory.
-type WalkFunc func(path string, info os.FileInfo, reader io.ReaderAt, err error) error
+type WalkFunc func(path string, info os.FileInfo, reader io.Reader, err error) error
 
 // Walk walks the file tree rooted at root including through zip files, calling walkFn for each file or
 // directory in the tree, including root. All errors that arise visiting files
@@ -80,7 +80,7 @@ func NewZipFileInfo(lm time.Time, info os.FileInfo) ZipFileInfo {
 	}
 }
 
-func walkFuncRecursive(filePath string, info os.FileInfo, content io.ReaderAt, walkFn WalkFunc, err error) error {
+func walkFuncRecursive(filePath string, info os.FileInfo, content io.Reader, walkFn WalkFunc, err error) error {
 	if err != nil {
 		return fmt.Errorf("walkFuncRecursive received error when called for file %s - %v", filepath.Join(filePath, info.Name()), err)
 	}
@@ -92,7 +92,7 @@ func walkFuncRecursive(filePath string, info os.FileInfo, content io.ReaderAt, w
 		return fmt.Errorf("walkFuncRecursive received error from walkFn for file %s - %v", filepath.Join(filePath, info.Name()), err)
 	}
 	// is a zip file
-	zr, err := zip.NewReader(content, info.Size())
+	zr, err := zip.NewReader(content.(io.ReaderAt), info.Size())
 	if err != nil {
 		if strings.Contains(err.Error(), "zip: not a valid zip file") {
 			log.Printf("File %s is not a valid zip file - %v", filepath.Join(filePath, info.Name()), err)
@@ -108,7 +108,6 @@ func walkFuncRecursive(filePath string, info os.FileInfo, content io.ReaderAt, w
 		if err == nil {
 			err = func() error {
 				defer rdr.Close()
-				insideContent, err := ioutil.ReadAll(rdr)
 				if err != nil {
 					if strings.Contains(err.Error(), "flate: corrupt input before offset") {
 						log.Printf("File %s is likely encrypted - %v", filepath.Join(filePath, f.Name), err)
@@ -121,12 +120,13 @@ func walkFuncRecursive(filePath string, info os.FileInfo, content io.ReaderAt, w
 					return fmt.Errorf("Error reading file - %s - %v", filepath.Join(filePath, f.Name), err)
 				}
 				if strings.ToLower(filepath.Ext(f.Name)) == ".zip" {
+					insideContent, err := ioutil.ReadAll(rdr)
 					err = walkFuncRecursive(filepath.Join(filePath, f.Name), NewZipFileInfo(info.ModTime(), f.FileInfo()), bytes.NewReader(insideContent), walkFn, err)
 					if err != nil {
 						return fmt.Errorf("Received error from walkFuncRecursive - %s - %v", filepath.Join(filePath, f.Name), err)
 					}
 				} else {
-					err = walkFn(filepath.Join(filePath, f.Name), NewZipFileInfo(info.ModTime(), f.FileInfo()), bytes.NewReader(insideContent), err)
+					err = walkFn(filepath.Join(filePath, f.Name), NewZipFileInfo(info.ModTime(), f.FileInfo()), rdr, err)
 					if err != nil {
 						return fmt.Errorf("Received error from walkFn - %s - %v", filepath.Join(filePath, f.Name), err)
 					}
