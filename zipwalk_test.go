@@ -73,14 +73,22 @@ func TestWalk(t *testing.T) {
 			t.Errorf("Error walking testdata - %s - %v", path, err)
 			return err
 		}
+		if info.IsDir() {
+			return nil
+		}
+		gotContents, err := ioutil.ReadAll(reader)
+		if err != nil {
+			t.Errorf("Error reading file %s - %v", path, err)
+		}
+		if len(gotContents) > 100 {
+			t.Logf("Read from %s - %q...", path, gotContents[:100])
+		} else {
+			t.Logf("Read from %s - %q", path, gotContents)
+		}
 		path = filepath.ToSlash(path)
 		if expectedContent, ok := expectedPaths[path]; ok {
 			t.Logf("Walked path %s", path)
 			if !info.IsDir() {
-				gotContents, err := ioutil.ReadAll(reader)
-				if err != nil {
-					t.Errorf("Error reading file %s - %v", path, err)
-				}
 				if len(expectedContent) > 0 && !bytes.Equal(expectedContent, gotContents) {
 					t.Errorf("Expected contents for %s of:\n%q\nvs\n%q", path, expectedContent, gotContents)
 				}

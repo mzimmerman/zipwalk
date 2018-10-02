@@ -108,19 +108,19 @@ func walkFuncRecursive(filePath string, info os.FileInfo, content io.Reader, wal
 		if err == nil {
 			err = func() error {
 				defer rdr.Close()
-				if err != nil {
-					if strings.Contains(err.Error(), "flate: corrupt input before offset") {
-						log.Printf("File %s is likely encrypted - %v", filepath.Join(filePath, f.Name), err)
-						return nil
-					}
-					if strings.Contains(err.Error(), "EOF") {
-						log.Printf("File %s error reading file, got unexpected EOF - %v", filepath.Join(filePath, f.Name), err)
-						return nil
-					}
-					return fmt.Errorf("Error reading file - %s - %v", filepath.Join(filePath, f.Name), err)
-				}
 				if strings.ToLower(filepath.Ext(f.Name)) == ".zip" {
 					insideContent, err := ioutil.ReadAll(rdr)
+					if err != nil {
+						if strings.Contains(err.Error(), "flate: corrupt input before offset") {
+							log.Printf("File %s is likely encrypted - %v", filepath.Join(filePath, f.Name), err)
+							return nil
+						}
+						if strings.Contains(err.Error(), "EOF") {
+							log.Printf("File %s error reading file, got unexpected EOF - %v", filepath.Join(filePath, f.Name), err)
+							return nil
+						}
+						return fmt.Errorf("Error reading file - %s - %v", filepath.Join(filePath, f.Name), err)
+					}
 					err = walkFuncRecursive(filepath.Join(filePath, f.Name), NewZipFileInfo(info.ModTime(), f.FileInfo()), bytes.NewReader(insideContent), walkFn, err)
 					if err != nil {
 						return fmt.Errorf("Received error from walkFuncRecursive - %s - %v", filepath.Join(filePath, f.Name), err)
