@@ -128,6 +128,9 @@ func walkFuncRecursive(filePath string, info os.FileInfo, content io.Reader, wal
 				} else {
 					err = walkFn(filepath.Join(filePath, f.Name), NewZipFileInfo(info.ModTime(), f.FileInfo()), rdr, err)
 					if err != nil {
+						if err == filepath.SkipDir {
+							return err
+						}
 						return fmt.Errorf("Received error from walkFn - %s - %v", filepath.Join(filePath, f.Name), err)
 					}
 				}
