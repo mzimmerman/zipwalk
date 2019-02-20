@@ -6,6 +6,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 
 	"github.com/mzimmerman/zipwalk"
@@ -54,20 +55,20 @@ func TestOpen(t *testing.T) {
 
 func TestWalk(t *testing.T) {
 	expectedPaths := map[string][]byte{
-		"testdata":                                    nil,
 		"testdata/a.txt":                              []byte("hi there"),
 		"testdata/a.zip/a.txt":                        []byte("hi there"),
 		"testdata/a.zip/dir1.zip":                     nil,
 		"testdata/a.zip/b.zip":                        nil,
 		"testdata/a.zip/b.zip/a.txt":                  []byte("hi there"),
 		"testdata/a.zip/b.zip/dir1.zip":               nil,
-		"testdata/a.zip/b.zip/dir1.zip/dir1":          nil,
 		"testdata/a.zip/b.zip/dir1.zip/dir1/dir1.txt": []byte("hi there"),
 		"testdata/a.zip":                              nil,
-		"testdata/dir2.zip/dir1":                      nil,
 		"testdata/dir2.zip/dir1/dir1.txt":             []byte("hi there"),
 		"testdata/dir2.zip":                           nil,
+		"testdata/testme.zip":                         nil,
+		"testdata/zerobyte.zip":                       nil,
 	}
+	m := sync.Mutex{}
 	err := zipwalk.Walk("testdata", func(path string, info os.FileInfo, reader io.Reader, err error) error {
 		if err != nil {
 			t.Errorf("Error walking testdata - %s - %v", path, err)
@@ -86,6 +87,7 @@ func TestWalk(t *testing.T) {
 			t.Logf("Read from %s - %q", path, gotContents)
 		}
 		path = filepath.ToSlash(path)
+		m.Lock()
 		if expectedContent, ok := expectedPaths[path]; ok {
 			t.Logf("Walked path %s", path)
 			if !info.IsDir() {
@@ -97,6 +99,7 @@ func TestWalk(t *testing.T) {
 		} else {
 			t.Errorf("Got unexpected path - %s", path)
 		}
+		m.Unlock()
 		if path == "testdata/a.zip/dir1.zip" {
 			return zipwalk.SkipZip
 		}
