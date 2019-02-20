@@ -10,8 +10,12 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
+
 	// "github.com/alexmullins/zip"
+
+	"github.com/iafan/cwalk"
 )
 
 // SkipDir is used as a return value from WalkFuncs to indicate that
@@ -45,7 +49,7 @@ type WalkFunc func(path string, info os.FileInfo, reader io.Reader, err error) e
 // large directories Walk can be inefficient.  Files insize zip files are walked in the order they appear in the zip file.
 // Walk does not follow symbolic links.
 func Walk(root string, walkFn WalkFunc) error {
-	return filepath.Walk(root, func(filePath string, info os.FileInfo, err error) error {
+	return cwalk.Walk(root, func(filePath string, info os.FileInfo, err error) error {
 		if err != nil || info.IsDir() {
 			return walkFn(filePath, info, nil, err)
 		}
@@ -101,54 +105,61 @@ func walkFuncRecursive(filePath string, info os.FileInfo, content io.Reader, wal
 		return fmt.Errorf("walkFuncRecursive error reading file %s - %v", filepath.Join(filePath, info.Name()), err)
 		// return walkFn(filePath, info, nil, err)
 	}
-
-	for _, f := range zr.File {
+	errorSlice := make([]error, len(zr.File))
+	var wg sync.WaitGroup
+	wg.Add(len(zr.File))
+	for fileNum := range zr.File {
 		// if !f.FileHeader.IsEncrypted() {
-		rdr, err := f.Open()
-		if err == nil {
-			err = func() error {
-				defer rdr.Close()
-				if strings.ToLower(filepath.Ext(f.Name)) == ".zip" {
-					insideContent, err := ioutil.ReadAll(rdr)
-					if err != nil {
-						if strings.Contains(err.Error(), "flate: corrupt input before offset") {
-							log.Printf("File %s is likely encrypted - %v", filepath.Join(filePath, f.Name), err)
-							return nil
+		go func(fileNum int) {
+			defer wg.Done()
+			f := zr.File[fileNum]
+			rdr, err := f.Open()
+			if err == nil {
+				err = func() error {
+					defer rdr.Close()
+					if strings.ToLower(filepath.Ext(f.Name)) == ".zip" {
+						insideContent, err := ioutil.ReadAll(rdr)
+						if err != nil {
+							if strings.Contains(err.Error(), "flate: corrupt input before offset") {
+								log.Printf("File %s is likely encrypted - %v", filepath.Join(filePath, f.Name), err)
+								return nil
+							}
+							if strings.Contains(err.Error(), "EOF") {
+								log.Printf("File %s error reading file, got unexpected EOF - %v", filepath.Join(filePath, f.Name), err)
+								return nil
+							}
+							return fmt.Errorf("Error reading file - %s - %v", filepath.Join(filePath, f.Name), err)
 						}
-						if strings.Contains(err.Error(), "EOF") {
-							log.Printf("File %s error reading file, got unexpected EOF - %v", filepath.Join(filePath, f.Name), err)
-							return nil
+						err = walkFuncRecursive(filepath.Join(filePath, f.Name), NewZipFileInfo(info.ModTime(), f.FileInfo()), bytes.NewReader(insideContent), walkFn, err)
+						if err != nil {
+							return fmt.Errorf("Received error from walkFuncRecursive - %s - %v", filepath.Join(filePath, f.Name), err)
 						}
-						return fmt.Errorf("Error reading file - %s - %v", filepath.Join(filePath, f.Name), err)
+					} else {
+						err = walkFn(filepath.Join(filePath, f.Name), NewZipFileInfo(info.ModTime(), f.FileInfo()), rdr, err)
+						if err != nil {
+							if err == filepath.SkipDir {
+								return err
+							}
+							return fmt.Errorf("Received error from walkFn - %s - %v", filepath.Join(filePath, f.Name), err)
+						}
 					}
-					err = walkFuncRecursive(filepath.Join(filePath, f.Name), NewZipFileInfo(info.ModTime(), f.FileInfo()), bytes.NewReader(insideContent), walkFn, err)
-					if err != nil {
-						return fmt.Errorf("Received error from walkFuncRecursive - %s - %v", filepath.Join(filePath, f.Name), err)
-					}
+					return nil
+				}()
+			} else { // err != nil
+				if strings.Contains(err.Error(), "zip: unsupported") {
+					log.Printf("File %s is likely corrupted - %v", filepath.Join(filePath, f.Name), err)
 				} else {
-					err = walkFn(filepath.Join(filePath, f.Name), NewZipFileInfo(info.ModTime(), f.FileInfo()), rdr, err)
-					if err != nil {
-						if err == filepath.SkipDir {
-							return err
-						}
-						return fmt.Errorf("Received error from walkFn - %s - %v", filepath.Join(filePath, f.Name), err)
-					}
+					err = fmt.Errorf("Error opening file %s - %v", filepath.Join(filePath, f.Name), err)
 				}
-				return nil
-			}()
-			if err != nil {
-				return err
 			}
-		} else { // err != nil
-			if strings.Contains(err.Error(), "zip: unsupported") {
-				log.Printf("File %s is likely corrupted - %v", filepath.Join(filePath, f.Name), err)
-				return nil
-			}
-			return fmt.Errorf("Error opening file %s - %v", filepath.Join(filePath, f.Name), err)
+			errorSlice[fileNum] = err
+		}(fileNum)
+	}
+	wg.Wait()
+	for _, err := range errorSlice {
+		if err != nil {
+			return err
 		}
-		// } else {
-		// 	log.Printf("Ignoring encrypted file - %s", filepath.Join(filePath, f.Name))
-		// }
 	}
 	return nil
 }
